@@ -7,7 +7,7 @@
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #121212;
+            background: url('https://example.com/pattern.png'), linear-gradient(145deg, #8BC6EC, #9599E2);
             margin: 0;
             padding: 0;
             display: flex;
@@ -17,7 +17,7 @@
             color: #fff;
         }
         #chat-container {
-            background: linear-gradient(145deg, #1c1c1c, #292929);
+            background: linear-gradient(145deg, #FFD194, #D1913C);
             border-radius: 15px;
             box-shadow: 0 0 15px rgba(0,0,0,0.5);
             width: 80%;
@@ -28,7 +28,7 @@
             overflow: hidden;
         }
         #chat-header {
-            background: #007BFF;
+            background: linear-gradient(145deg, #F3A183, #F7CE68);
             color: #fff;
             padding: 20px;
             text-align: center;
@@ -37,29 +37,29 @@
         }
         #chat-box {
             padding: 20px;
-            height: calc(100% - 160px); /* Adjusted for header and input container */
+            height: calc(100% - 160px);
             overflow-y: scroll;
-            background-color: #1e1e1e;
+            background-color: #F4E1D2;
             flex-grow: 1;
             scrollbar-width: thin;
-            scrollbar-color: #007BFF #121212;
+            scrollbar-color: #FFD194 #F4E1D2;
         }
         #chat-box::-webkit-scrollbar {
             width: 8px;
         }
         #chat-box::-webkit-scrollbar-track {
-            background: #121212;
+            background: #F4E1D2;
         }
         #chat-box::-webkit-scrollbar-thumb {
-            background-color: #007BFF;
+            background-color: #FFD194;
             border-radius: 10px;
-            border: 3px solid #121212;
+            border: 3px solid #F4E1D2;
         }
         #input-container {
             display: flex;
             border-top: 1px solid #333;
             padding: 10px;
-            background-color: #1e1e1e;
+            background-color: #F3A183;
         }
         #message {
             flex: 1;
@@ -67,13 +67,13 @@
             border: none;
             outline: none;
             font-size: 1em;
-            background-color: #292929;
-            color: #fff;
+            background-color: #FFD194;
+            color: #333;
             border-radius: 10px;
             margin-right: 10px;
         }
         #send-button {
-            background-color: #007BFF;
+            background-color: #D1913C;
             color: #fff;
             border: none;
             padding: 15px 20px;
@@ -83,7 +83,7 @@
             transition: background-color 0.3s ease;
         }
         #send-button:hover {
-            background-color: #0056b3;
+            background-color: #B77C30;
         }
         .message {
             padding: 15px;
@@ -92,40 +92,91 @@
             font-size: 1em;
         }
         .user-message {
-            background-color: #007BFF;
+            background-color: #D1913C;
             color: #fff;
             text-align: right;
             align-self: flex-end;
         }
         .ai-message {
-            background-color: #333;
-            color: #fff;
+            background-color: #F4E1D2;
+            color: #333;
             text-align: left;
             align-self: flex-start;
         }
+        .thinking-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #000; /* 修改为黑色 */
+            animation: blink 1s infinite;
+            margin-left: 10px;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
     </style>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <script>
+        const socket = io('http://127.0.0.1:5003');
+
+        function appendMessage(message, className) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${className}`;
+            messageElement.innerHTML = message;
+            const chatBox = document.getElementById('chat-box');
+            chatBox.appendChild(messageElement);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function appendPartialMessage(message) {
+            const aiMessages = document.getElementsByClassName('ai-message');
+            const lastMessage = aiMessages[aiMessages.length - 1];
+            lastMessage.innerHTML += message;
+            const chatBox = document.getElementById('chat-box');
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function showThinkingIndicator() {
+            const indicatorElement = document.createElement('div');
+            indicatorElement.className = 'thinking-indicator';
+            const aiMessages = document.getElementsByClassName('ai-message');
+            const lastMessage = aiMessages[aiMessages.length - 1];
+            lastMessage.appendChild(indicatorElement);
+        }
+
+        function removeThinkingIndicator() {
+            const indicators = document.getElementsByClassName('thinking-indicator');
+            while (indicators.length > 0) {
+                indicators[0].parentNode.removeChild(indicators[0]);
+            }
+        }
+
         async function sendMessage() {
             const userMessage = document.getElementById('message').value.trim();
             if (!userMessage) return;
 
-            const response = await fetch('http://127.0.0.1:5002/chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ message: userMessage })
-            });
-
-            const data = await response.json();
-            const chatBox = document.getElementById('chat-box');
-
-            chatBox.innerHTML += `<div class="message user-message"><strong>你:</strong> ${userMessage}</div>`;
-            chatBox.innerHTML += `<div class="message ai-message"><strong>AI:</strong> ${data.response}</div>`;
-
+            appendMessage(`<strong>你:</strong> ${userMessage}`, 'user-message');
+            socket.emit('send_message', { message: userMessage });
             document.getElementById('message').value = '';
-            chatBox.scrollTop = chatBox.scrollHeight;
+            appendMessage(`<strong>AI:</strong> `, 'ai-message');
+            showThinkingIndicator(); // 显示思考指示器
         }
+
+        socket.on('receive_message', (data) => {
+            removeThinkingIndicator(); // 移除思考指示器
+            appendPartialMessage(data.response);
+        });
+
+        // 添加事件监听器，按 Enter 键时发送消息
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('message').addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();  // 阻止默认的 Enter 键行为（如换行）
+                    sendMessage();
+                }
+            });
+        });
     </script>
 </head>
 <body>
