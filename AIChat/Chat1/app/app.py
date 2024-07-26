@@ -3,6 +3,8 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from openai import OpenAI
 import time
+import redis
+import json
 
 # 替换为你实际的 API 密钥
 api_key = "5fgTkOiV4YoGPtH1rR3DU87ck4VvMOxLIm1R5ZjFkoei0OwJKmnPnRlIrjFurZDEF"
@@ -13,19 +15,34 @@ app.config['SECRET_KEY'] = 'your_secret_key'
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# 初始化对话历史
-messages = [
-    {
-        "role": "system",
-        "content": "你是由阶跃星辰提供的AI聊天助手，你擅长中文，英文，以及多种其他语言的对话。在保证用户数据安全的前提下，你能对用户的问题和请求，作出快速和精准的回答。同时，你的回答和建议应该拒绝黄赌毒，暴力恐怖主义的内容",
-    },
-]
+redis_client = redis.StrictRedis(host='127.0.0.1', port=6379, db=0, decode_responses=True)
+redis_chat_key = "chat_history"
 
+# 加载对话历史
+def load_messages_from_redis():
+    try:
+        data = redis_client.get(redis_chat_key)
+        if data:
+            return json.loads(data)
+        else:
+            return []
+    except redis.exceptions.ResponseError:
+        print("Error loading from Redis: WRONGTYPE Operation against a key holding the wrong kind of value")
+        return []
+
+# 保存对话历史
+def save_messages_to_redis(messages):
+    redis_client.set(redis_chat_key, json.dumps(messages))
+
+messages = load_messages_from_redis()
 
 @app.route('/')
 def index():
-    return render_template('index.html')
-
+    messages = [
+        {'role': 'user', 'content': 'Hello'},
+        {'role': 'ai', 'content': 'Hi there!'}
+    ]
+    return render_template('index.html', messages=json.dumps(messages))
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -38,8 +55,8 @@ def chat():
     )
     response = completion.choices[0].message.content
     messages.append({"role": "assistant", "content": response})
+    save_messages_to_redis(messages)
     return jsonify({'response': response})
-
 
 @socketio.on('send_message')
 def handle_message(data):
@@ -54,6 +71,7 @@ def handle_message(data):
     )
     full_response = completion.choices[0].message.content
     messages.append({"role": "assistant", "content": full_response})
+    save_messages_to_redis(messages)
 
     # 逐字发送响应
     for char in full_response:
